@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/loser"
+	"github.com/bboreham/go-loser"
 )
 
 type List struct {
