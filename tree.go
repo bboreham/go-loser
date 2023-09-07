@@ -87,7 +87,8 @@ func (t *Tree[E, S]) Next() bool {
 }
 
 // Current winner has been advanced independently; fix up the loser tree.
-func (t *Tree[E, S]) Fix(closed bool) {
+// Return true if the tree still has data; false if tree is now empty.
+func (t *Tree[E, S]) Fix(closed bool) bool {
 	nodes := t.nodes
 	cur := &nodes[nodes[0].index]
 	if closed {
@@ -97,13 +98,6 @@ func (t *Tree[E, S]) Fix(closed bool) {
 		cur.value = cur.items.At()
 	}
 	t.replayGames(nodes[0].index)
-}
-
-func (t *Tree[E, S]) IsEmpty() bool {
-	nodes := t.nodes
-	if nodes[0].index == -1 { // If tree has not been initialized yet, do that.
-		t.initialize()
-	}
 	return nodes[nodes[0].index].index == -1
 }
 
