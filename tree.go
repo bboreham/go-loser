@@ -2,19 +2,17 @@
 
 package loser
 
-import "golang.org/x/exp/constraints"
-
-type Value constraints.Ordered
-
-type Sequence[E Value] interface {
-	At() E      // Returns the current value.
+type Sequence interface {
 	Next() bool // Advances and returns true if there is a value at this new position.
 }
 
-func New[E Value, S Sequence[E]](sequences []S, maxVal E) *Tree[E, S] {
+func New[E any, S Sequence](sequences []S, maxVal E, at func(S) E, less func(E, E) bool, close func(S)) *Tree[E, S] {
 	nSequences := len(sequences)
 	t := Tree[E, S]{
 		maxVal: maxVal,
+		at:     at,
+		less:   less,
+		close:  close,
 		nodes:  make([]node[E, S], nSequences*2),
 	}
 	for i, s := range sequences {
@@ -33,18 +31,22 @@ func (t *Tree[E, S]) Close() {
 		if e.index == -1 {
 			continue
 		}
+		t.close(e.items)
 	}
 }
 
 // A loser tree is a binary tree laid out such that nodes N and N+1 have parent N/2.
 // We store M leaf nodes in positions M...2M-1, and M-1 internal nodes in positions 1..M-1.
 // Node 0 is a special node, containing the winner of the contest.
-type Tree[E Value, S Sequence[E]] struct {
+type Tree[E any, S Sequence] struct {
 	maxVal E
+	at     func(S) E
+	less   func(E, E) bool
+	close  func(S) // Called when Next() returns false.
 	nodes  []node[E, S]
 }
 
-type node[E Value, S Sequence[E]] struct {
+type node[E any, S Sequence] struct {
 	index int // This is the loser for all nodes except the 0th, where it is the winner.
 	value E   // Value copied from the loser node, or winner for node 0.
 	items S   // Only populated for leaf nodes.
@@ -53,9 +55,10 @@ type node[E Value, S Sequence[E]] struct {
 func (t *Tree[E, S]) moveNext(index int) bool {
 	n := &t.nodes[index]
 	if n.items.Next() {
-		n.value = n.items.At()
+		n.value = t.at(n.items)
 		return true
 	}
+	t.close(n.items) // Next() returned false; close it and mark as finished.
 	n.value = t.maxVal
 	n.index = -1
 	return false
@@ -94,7 +97,7 @@ func (t *Tree[E, S]) Fix(closed bool) {
 		cur.value = t.maxVal
 		cur.index = -1
 	} else {
-		cur.value = cur.items.At()
+		cur.value = t.at(cur.items)
 	}
 	t.replayGames(nodes[0].index)
 }
@@ -123,7 +126,7 @@ func (t *Tree[E, S]) playGame(pos int) int {
 	left := t.playGame(pos * 2)
 	right := t.playGame(pos*2 + 1)
 	var loser, winner int
-	if nodes[left].value < nodes[right].value {
+	if t.less(nodes[left].value, nodes[right].value) {
 		loser, winner = right, left
 	} else {
 		loser, winner = left, right
@@ -139,7 +142,7 @@ func (t *Tree[E, S]) replayGames(pos int) {
 	winningValue := nodes[pos].value
 	for n := parent(pos); n != 0; n = parent(n) {
 		node := &nodes[n]
-		if node.value < winningValue {
+		if t.less(node.value, winningValue) {
 			// Record pos as the loser here, and the old loser is the new winner.
 			node.index, pos = pos, node.index
 			node.value, winningValue = winningValue, node.value
