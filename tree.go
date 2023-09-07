@@ -52,14 +52,13 @@ type node[E Value, S Sequence[E]] struct {
 
 func (t *Tree[E, S]) moveNext(index int) bool {
 	n := &t.nodes[index]
-	ret := n.items.Next()
-	if ret {
+	if n.items.Next() {
 		n.value = n.items.At()
-	} else {
-		n.value = t.maxVal
-		n.index = -1
+		return true
 	}
-	return ret
+	n.value = t.maxVal
+	n.index = -1
+	return false
 }
 
 func (t *Tree[E, S]) Winner() S {
@@ -78,6 +77,9 @@ func (t *Tree[E, S]) Next() bool {
 	if nodes[0].index == -1 { // If tree has not been initialized yet, do that.
 		t.initialize()
 		return nodes[nodes[0].index].index != -1
+	}
+	if nodes[nodes[0].index].index == -1 { // already exhausted
+		return false
 	}
 	t.moveNext(nodes[0].index)
 	t.replayGames(nodes[0].index)
@@ -131,10 +133,9 @@ func (t *Tree[E, S]) playGame(pos int) int {
 	return winner
 }
 
-// Starting at pos, re-consider all values up to the root.
+// Starting at pos, which is a winner, re-consider all values up to the root.
 func (t *Tree[E, S]) replayGames(pos int) {
 	nodes := t.nodes
-	// At the start, pos is a leaf node, and is the winner at that level.
 	winningValue := nodes[pos].value
 	for n := parent(pos); n != 0; n = parent(n) {
 		node := &nodes[n]
