@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/bboreham/go-loser"
+	"github.com/bboreham/go-loser/any"
 )
 
 type List struct {
