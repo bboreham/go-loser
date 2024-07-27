@@ -109,3 +109,36 @@ func TestMerge(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkMerge(b *testing.B) {
+	var lists []*List
+	var data [][]uint64
+
+	// Create 10000 Lists, so that all memory allocation is done before starting the benchmark.
+	const nLists = 10000
+	const nItems = 100
+	for i := 0; i < nLists; i++ {
+		items := make([]uint64, 0, nItems)
+		for j := 1; j < nItems; j++ {
+			items = append(items, uint64(i+j*nItems))
+		}
+		lists = append(lists, NewList(items...))
+		data = append(data, items)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Reset the Lists to their original values each time round the loop.
+		for j := range data {
+			*lists[j] = List{list: data[j]}
+		}
+		lt := loser.New[uint64](lists, math.MaxUint64)
+		consume(lt)
+	}
+}
+
+func consume[E loser.Value, S loser.Sequence[E]](p S) {
+	for p.Next() {
+		p.At()
+	}
+}
