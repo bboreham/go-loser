@@ -115,3 +115,36 @@ type Uint64 uint64
 func (u Uint64) Less(other Uint64) bool {
 	return u < other
 }
+
+func BenchmarkMerge(b *testing.B) {
+	var lists []*List[Uint64]
+	var data [][]Uint64
+
+	// Create 10000 Lists, so that all memory allocation is done before starting the benchmark.
+	const nLists = 10000
+	const nItems = 100
+	for i := 0; i < nLists; i++ {
+		items := make([]Uint64, 0, nItems)
+		for j := 1; j < nItems; j++ {
+			items = append(items, Uint64(i+j*nItems))
+		}
+		data = append(data, items)
+		lists = append(lists, NewList(items...))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Reset the Lists to their original values each time round the loop.
+		for j := range data {
+			*lists[j] = List[Uint64]{list: data[j]}
+		}
+		lt := loser.New(lists, math.MaxUint64)
+		consume(lt)
+	}
+}
+
+func consume[E loser.Lesser[E], S loser.Sequence[E]](t *loser.Tree[E, S]) {
+	for t.Next() {
+		t.At()
+	}
+}
