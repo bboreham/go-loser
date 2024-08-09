@@ -1,6 +1,7 @@
 package loser_test
 
 import (
+	"iter"
 	"math"
 	"testing"
 
@@ -16,42 +17,30 @@ func NewList[E loser.Lesser[E]](list ...E) *List[E] {
 	return &List[E]{list: list}
 }
 
-func (it *List[E]) At() E {
-	return it.cur
-}
-
-func (it *List[E]) Next() bool {
-	if len(it.list) > 0 {
-		it.cur = it.list[0]
-		it.list = it.list[1:]
-		return true
+func (it *List[E]) Iter() iter.Seq[E] {
+	return func(yield func(E) bool) {
+		for _, i := range it.list {
+			yield(i)
+		}
 	}
-	var zero E
-	it.cur = zero
-	return false
 }
 
-func (it *List[E]) Seek(val E) bool {
-	for it.cur.Less(val) && len(it.list) > 0 {
-		it.cur = it.list[0]
-		it.list = it.list[1:]
-	}
-	return len(it.list) > 0
-}
-
-func checkIterablesEqual[E loser.Lesser[E], S1, S2 loser.Sequence[E]](t *testing.T, a S1, b S2) {
+func checkIterablesEqual[E loser.Lesser[E]](t *testing.T, a loser.Iterable[E], b loser.Iterable[E]) {
 	t.Helper()
 	count := 0
-	for a.Next() {
+	next, stop := iter.Pull(b.Iter())
+	defer stop()
+	for va := range a.Iter() {
 		count++
-		if !b.Next() {
+		vb, ok := next()
+		if !ok {
 			t.Fatalf("b ended before a after %d elements", count)
 		}
-		if a.At().Less(b.At()) || b.At().Less(a.At()) {
-			t.Fatalf("position %d: %v != %v", count, a.At(), b.At())
+		if va.Less(vb) || vb.Less(va) {
+			t.Fatalf("position %d: %v != %v", count, va, vb)
 		}
 	}
-	if b.Next() {
+	if _, ok := next(); ok {
 		t.Fatalf("a ended before b after %d elements", count)
 	}
 }
@@ -59,7 +48,7 @@ func checkIterablesEqual[E loser.Lesser[E], S1, S2 loser.Sequence[E]](t *testing
 func TestMerge(t *testing.T) {
 	tests := []struct {
 		name string
-		args []*List[Uint64]
+		args []loser.Iterable[Uint64]
 		want *List[Uint64]
 	}{
 		{
@@ -68,37 +57,37 @@ func TestMerge(t *testing.T) {
 		},
 		{
 			name: "one list",
-			args: []*List[Uint64]{NewList[Uint64](1, 2, 3, 4)},
+			args: []loser.Iterable[Uint64]{NewList[Uint64](1, 2, 3, 4)},
 			want: NewList[Uint64](1, 2, 3, 4),
 		},
 		{
 			name: "two lists",
-			args: []*List[Uint64]{NewList[Uint64](3, 4, 5), NewList[Uint64](1, 2)},
+			args: []loser.Iterable[Uint64]{NewList[Uint64](3, 4, 5), NewList[Uint64](1, 2)},
 			want: NewList[Uint64](1, 2, 3, 4, 5),
 		},
 		{
 			name: "two lists, first empty",
-			args: []*List[Uint64]{NewList[Uint64](), NewList[Uint64](1, 2)},
+			args: []loser.Iterable[Uint64]{NewList[Uint64](), NewList[Uint64](1, 2)},
 			want: NewList[Uint64](1, 2),
 		},
 		{
 			name: "two lists, second empty",
-			args: []*List[Uint64]{NewList[Uint64](1, 2), NewList[Uint64]()},
+			args: []loser.Iterable[Uint64]{NewList[Uint64](1, 2), NewList[Uint64]()},
 			want: NewList[Uint64](1, 2),
 		},
 		{
 			name: "two lists b",
-			args: []*List[Uint64]{NewList[Uint64](1, 2), NewList[Uint64](3, 4, 5)},
+			args: []loser.Iterable[Uint64]{NewList[Uint64](1, 2), NewList[Uint64](3, 4, 5)},
 			want: NewList[Uint64](1, 2, 3, 4, 5),
 		},
 		{
 			name: "two lists c",
-			args: []*List[Uint64]{NewList[Uint64](1, 3), NewList[Uint64](2, 4, 5)},
+			args: []loser.Iterable[Uint64]{NewList[Uint64](1, 3), NewList[Uint64](2, 4, 5)},
 			want: NewList[Uint64](1, 2, 3, 4, 5),
 		},
 		{
 			name: "three lists",
-			args: []*List[Uint64]{NewList[Uint64](1, 3), NewList[Uint64](2, 4), NewList[Uint64](5)},
+			args: []loser.Iterable[Uint64]{NewList[Uint64](1, 3), NewList[Uint64](2, 4), NewList[Uint64](5)},
 			want: NewList[Uint64](1, 2, 3, 4, 5),
 		},
 	}
@@ -118,6 +107,7 @@ func (u Uint64) Less(other Uint64) bool {
 
 func BenchmarkMerge(b *testing.B) {
 	var lists []*List[Uint64]
+	var iterables []loser.Iterable[Uint64]
 	var data [][]Uint64
 
 	// Create 10000 Lists, so that all memory allocation is done before starting the benchmark.
@@ -129,7 +119,9 @@ func BenchmarkMerge(b *testing.B) {
 			items = append(items, Uint64(i+j*nItems))
 		}
 		data = append(data, items)
-		lists = append(lists, NewList(items...))
+		list := NewList(items...)
+		lists = append(lists, list)
+		iterables = append(iterables, list)
 	}
 
 	b.ResetTimer()
@@ -138,13 +130,13 @@ func BenchmarkMerge(b *testing.B) {
 		for j := range data {
 			*lists[j] = List[Uint64]{list: data[j]}
 		}
-		lt := loser.New(lists, math.MaxUint64)
+		lt := loser.New(iterables, math.MaxUint64)
 		consume(lt)
 	}
 }
 
-func consume[E loser.Lesser[E], S loser.Sequence[E]](t *loser.Tree[E, S]) {
-	for t.Next() {
-		t.At()
+func consume[E loser.Lesser[E]](t *loser.Tree[E]) {
+	for v := range t.Iter() {
+		_ = v
 	}
 }
